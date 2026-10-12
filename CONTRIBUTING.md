@@ -1,0 +1,27 @@
+# Contributing to OrderFlow
+
+Small, focused changes are welcome. OrderFlow is an executable ASP.NET Core architecture demo; its purpose is to make background-job behavior understandable.
+
+## Development
+
+1. Fork and clone the repository.
+2. Install the .NET 10 SDK.
+3. Run `dotnet test --configuration Release`.
+4. Run `dotnet run --project src/OrderFlow --urls http://localhost:5088`.
+5. Check successful delivery, recovery, exhausted retries, and repeating the last request in the browser.
+
+No secrets, database, or private services are needed. Do not contribute proprietary code or actual customer/order data.
+
+## Pull requests
+
+Explain the behavior before and after your change, the relevant tests, and any change to queue, idempotency, cancellation, or retention guarantees. Add a regression test for fixes. For UI changes, include a screenshot and check narrow layouts, keyboard navigation, and readable focus states. Don't claim accessibility compliance from automated checks alone.
+
+Discuss database, broker, authentication, or architecture changes in an issue first. Prefer optional adapters over turning the demo into an infrastructure setup exercise. Avoid cosmetic abstraction layers without a concrete need.
+
+## Good starting points
+
+- Drive processor timing through a fake clock to remove real-time waits from outcome tests.
+- Announce terminal order changes to assistive technology without narrating every poll.
+- Propose a durable queue/store adapter with restart and duplicate-delivery tests.
+
+For bugs, include reproduction steps, expected/actual results, SDK version, and relevant sanitized logs. Do not include session tokens from a shared instance or credentials.
