@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Time.Testing;
 using OrderFlow;
@@ -46,20 +47,151 @@ public class OrderTests
     [InlineData(Scenario.Exhaust, OrderStatus.Failed, 3)]
     public async Task ProcessorResolvesEachScenario(Scenario scenario, OrderStatus status, int attempts)
     {
-        var store = new OrderStore(TimeProvider.System); var session = Guid.NewGuid(); store.Submit(session, Guid.NewGuid(), scenario);
-        var work = await store.Reader.ReadAsync(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var processor = new OrderProcessor(store, TimeProvider.System); await processor.ProcessAsync(work, timeout.Token);
-        var order = Assert.Single(store.List(session)); Assert.Equal(status, order.Status); Assert.Equal(attempts, order.Attempts);
-        Assert.Equal(attempts - 1, order.Events.Count(x => x.Message.StartsWith("Temporary failure")));
-        await processor.ProcessAsync(work, timeout.Token); Assert.Equal(order.Events.Count, Assert.Single(store.List(session)).Events.Count);
+        var clock = new SignalingFakeTimeProvider();
+        var start = clock.GetUtcNow();
+        var store = new OrderStore(clock);
+        var session = Guid.NewGuid();
+        store.Submit(session, Guid.NewGuid(), scenario);
+        var work = await store.Reader.ReadAsync();
+        using var cancellation = new CancellationTokenSource();
+        var processor = new OrderProcessor(store, clock);
+        var processing = processor.ProcessAsync(work, cancellation.Token);
+        try
+        {
+            for (var attempt = 1; attempt <= attempts; attempt++)
+            {
+                // Await timer registration, not thread scheduling or a wall-clock sleep.
+                await clock.ExpectDelayAsync(TimeSpan.FromMilliseconds(700));
+                AssertState(OrderStatus.Processing, attempt, attempt * 2);
+                clock.Advance(TimeSpan.FromMilliseconds(699));
+                AssertState(OrderStatus.Processing, attempt, attempt * 2);
+                Assert.False(processing.IsCompleted);
+                clock.Advance(TimeSpan.FromMilliseconds(1));
+
+                if (attempt == attempts) break;
+                var backoff = TimeSpan.FromSeconds(attempt == 1 ? 1 : 2);
+                await clock.ExpectDelayAsync(backoff);
+                AssertState(OrderStatus.Retrying, attempt, attempt * 2 + 1);
+                clock.Advance(backoff - TimeSpan.FromMilliseconds(1));
+                AssertState(OrderStatus.Retrying, attempt, attempt * 2 + 1);
+                Assert.False(processing.IsCompleted);
+                clock.Advance(TimeSpan.FromMilliseconds(1));
+            }
+
+            // Real time is only a guard against a broken test hanging indefinitely.
+            await processing.WaitAsync(TimeSpan.FromSeconds(5));
+            var order = Assert.Single(store.List(session));
+            Assert.Equal(status, order.Status);
+            Assert.Equal(attempts, order.Attempts);
+            var finalMessage = status == OrderStatus.Completed
+                ? "Fulfillment completed (simulation)"
+                : "Retry budget exhausted; manual investigation would be required";
+            string[] expectedMessages = attempts == 1
+                ? ["Accepted and queued", "Attempt 1: contacting simulated fulfillment", finalMessage]
+                : ["Accepted and queued", "Attempt 1: contacting simulated fulfillment",
+                   "Temporary failure; retry in 1s", "Attempt 2: contacting simulated fulfillment",
+                   "Temporary failure; retry in 2s", "Attempt 3: contacting simulated fulfillment", finalMessage];
+            int[] expectedMilliseconds = attempts == 1 ? [0, 0, 700] : [0, 0, 700, 1700, 2400, 4400, 5100];
+            Assert.Equal(expectedMessages, order.Events.Select(x => x.Message));
+            Assert.Equal(expectedMilliseconds.Select(x => start.AddMilliseconds(x)), order.Events.Select(x => x.At));
+
+            // A terminal order cannot be processed again, even if delivered twice.
+            await processor.ProcessAsync(work, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
+            clock.Advance(TimeSpan.FromMinutes(1));
+            Assert.Equal(order.Events, Assert.Single(store.List(session)).Events);
+            Assert.False(clock.HasUnobservedDelay);
+        }
+        finally { cancellation.Cancel(); }
+
+        void AssertState(OrderStatus expected, int attempt, int eventCount)
+        {
+            var order = Assert.Single(store.List(session));
+            Assert.Equal(expected, order.Status);
+            Assert.Equal(attempt, order.Attempts);
+            Assert.Equal(eventCount, order.Events.Count);
+        }
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task CancellationDuringBackoffPreventsFurtherAttempts(int cancelAfterAttempt)
+    {
+        var clock = new SignalingFakeTimeProvider();
+        var store = new OrderStore(clock);
+        var session = Guid.NewGuid();
+        store.Submit(session, Guid.NewGuid(), Scenario.Recover);
+        var work = await store.Reader.ReadAsync();
+        using var cancellation = new CancellationTokenSource();
+        var processing = new OrderProcessor(store, clock).ProcessAsync(work, cancellation.Token);
+        try
+        {
+            for (var attempt = 1; attempt <= cancelAfterAttempt; attempt++)
+            {
+                await clock.ExpectDelayAsync(TimeSpan.FromMilliseconds(700));
+                clock.Advance(TimeSpan.FromMilliseconds(700));
+                var backoff = TimeSpan.FromSeconds(attempt == 1 ? 1 : 2);
+                await clock.ExpectDelayAsync(backoff);
+                if (attempt < cancelAfterAttempt) clock.Advance(backoff);
+                else clock.Advance(backoff / 2);
+            }
+
+            var before = Assert.Single(store.List(session));
+            Assert.Equal(OrderStatus.Retrying, before.Status);
+            Assert.Equal(cancelAfterAttempt, before.Attempts);
+            Assert.False(processing.IsCompleted);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => processing.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(processing.IsCanceled);
+
+            // Advance past every retry deadline: cancellation must leave no late events.
+            clock.Advance(TimeSpan.FromMinutes(10));
+            var after = Assert.Single(store.List(session));
+            Assert.Equal(before.Status, after.Status);
+            Assert.Equal(before.Attempts, after.Attempts);
+            Assert.Equal(before.Events, after.Events);
+            Assert.False(clock.HasUnobservedDelay);
+        }
+        finally { cancellation.Cancel(); }
+    }
+
     [Fact]
     public async Task CancellationStopsWork()
     {
-        var store = new OrderStore(TimeProvider.System); var session = Guid.NewGuid(); store.Submit(session, Guid.NewGuid(), Scenario.Recover);
-        var work = await store.Reader.ReadAsync(); using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new OrderProcessor(store, TimeProvider.System).ProcessAsync(work, cancellation.Token));
+        var clock = new SignalingFakeTimeProvider();
+        var store = new OrderStore(clock);
+        var session = Guid.NewGuid();
+        store.Submit(session, Guid.NewGuid(), Scenario.Recover);
+        var work = await store.Reader.ReadAsync();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new OrderProcessor(store, clock).ProcessAsync(work, cancellation.Token));
         Assert.Equal(OrderStatus.Queued, Assert.Single(store.List(session)).Status);
+        Assert.False(clock.HasUnobservedDelay);
+    }
+
+    // A test-only handshake: each notification means the fake timer is installed.
+    // This avoids advancing past a timer before the processor has scheduled it.
+    private sealed class SignalingFakeTimeProvider : FakeTimeProvider
+    {
+        private readonly Channel<TimeSpan> delays = Channel.CreateUnbounded<TimeSpan>(
+            new UnboundedChannelOptions { AllowSynchronousContinuations = false });
+        public bool HasUnobservedDelay => delays.Reader.TryPeek(out _);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            delays.Writer.TryWrite(dueTime);
+            return timer;
+        }
+
+        public async Task ExpectDelayAsync(TimeSpan expected)
+        {
+            var actual = await delays.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(expected, actual);
+        }
     }
     [Fact]
     public void CompletedOrdersExpireButQueuedWorkDoesNot()
