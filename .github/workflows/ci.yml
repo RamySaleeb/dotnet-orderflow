@@ -14,5 +14,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/frontend/*.test.mjs
       - run: dotnet test tests/OrderFlow.Tests --configuration Release
       - run: dotnet publish src/OrderFlow --configuration Release --output publish
