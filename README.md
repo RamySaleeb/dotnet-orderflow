@@ -96,7 +96,9 @@ docker build -t orderflow .
 docker run --rm -p 5088:8080 orderflow
 ```
 
-Validation: all **16 tests** pass and the .NET release publish succeeds. The dashboard was manually checked for all three outcomes, request replay, keyboard submission, and a 375px-wide layout. Docker was not run because no Docker daemon was available.
+Processor outcome tests advance `FakeTimeProvider` through 699ms/700ms processing and just-before/at-deadline backoff boundaries. A test-only timer-registration signal synchronizes async continuations; real time is used only as a deadlock guard. Cancellation tests cover both backoff waits and verify that advancing time afterward produces no new attempts or events.
+
+Validation: all **18 tests** pass and the .NET release publish succeeds. The dashboard was manually checked for all three outcomes, request replay, keyboard submission, and a 375px-wide layout. Docker was not run because no Docker daemon was available.
 
 The container runs as the .NET image's non-root application user. CI tests and publishes the app on pushes and pull requests. Docker is supplied as a convenience; no cloud resources are provisioned.
 
@@ -106,7 +108,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Start wit
 
 | Roadmap | Good fit |
 | --- | --- |
-| [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | First contribution: C# tests and controlled time |
+| [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | Completed: controlled time and cancellation during both backoff waits |
 | [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Frontend behavior and accessibility |
 | [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | First contribution: HTTP integration tests |
 | [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Architecture proposal before implementation |
