@@ -20,7 +20,7 @@ Discuss database, broker, authentication, or architecture changes in an issue fi
 
 ## Good starting points
 
-- Extend HTTP validation and session-scoped idempotency coverage ([issue #3](https://github.com/RamySaleeb/dotnet-orderflow/issues/3)).
+- Extend API boundary coverage (for example malformed JSON or unsupported content types). [Issue #3](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) covers UUID validation and session-scoped replay; keep fresh sessions and stay below the shared submission limit.
 - Extend assistive-technology verification of outcome announcements; record the browser and screen reader used. Check quiet initial history, grouped completions, replay deduplication, and focus retention.
 - Propose a durable queue/store adapter with restart and duplicate-delivery tests.
 

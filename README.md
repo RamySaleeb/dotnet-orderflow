@@ -112,7 +112,9 @@ Run the frontend regression suite with Node.js 24 or newer (no npm install or bu
 node --test tests/frontend/*.test.mjs
 ```
 
-Validation: **18 backend tests and 12 frontend tests** pass, and the .NET release publish succeeds. Frontend coverage includes quiet hydration, terminal transitions, multiple outcomes, replay/poll deduplication, early submission, and unchanged live-region writes.
+Validation: **27 backend tests and 12 frontend tests** pass, and the .NET release publish succeeds. API integration coverage checks missing, malformed, and all-zero UUID headers, rejected-request safety, independent orders for the same key in different sessions, and replay IDs/counts within each session. Cases use fresh sessions and 21 POSTs per fixture, below the shared 60/minute limit; they do not depend on worker timing or test order.
+
+Frontend coverage includes quiet hydration, terminal transitions, multiple outcomes, replay/poll deduplication, early submission, and unchanged live-region writes.
 
 Manual checks used the Codex in-app browser on macOS: keyboard submission/replay, focus retained through completion and failure, quiet reload, a 375px viewport, and a temporary local stylesheet doubling font sizes (including 28px action-button text). Controls wrapped without horizontal page overflow. The accessibility tree was inspected; VoiceOver/NVDA speech was **not** tested, and this is not a WCAG certification. Docker was not run because no Docker daemon was available.
 
@@ -126,7 +128,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Start wit
 | --- | --- |
 | [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | Completed: controlled time and cancellation during both backoff waits |
 | [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Completed: quiet outcome announcements and frontend regression coverage |
-| [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | First contribution: HTTP integration tests |
+| [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | Completed: UUID validation, rejected-request safety, and session-scoped replay tests |
 | [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Architecture proposal before implementation |
 
 Each issue includes starting files, acceptance criteria, and validation expectations. Keep the zero-configuration local experience intact; durability is a design proposal, not a deployed feature. [Browse all open issues](https://github.com/RamySaleeb/dotnet-orderflow/issues).
