@@ -10,6 +10,8 @@ Submit a fictional order and watch the backend work: queue admission, asynchrono
 
 This is a **local, executable engineering demo**. There is no hosted deployment. The dashboard calls a real ASP.NET Core API and `BackgroundService`; only fulfillment is simulated. No customer data, payment provider, private code, or commercial system is involved.
 
+![OrderFlow dashboard showing completed and failed fictional orders](preview.png)
+
 ## Run it in two commands
 
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), clone this repository, and from its root run:
@@ -93,6 +95,8 @@ dotnet publish src/OrderFlow --configuration Release --output publish
 docker build -t orderflow .
 docker run --rm -p 5088:8080 orderflow
 ```
+
+Validation: all **16 tests** pass and the .NET release publish succeeds. The dashboard was manually checked for all three outcomes, request replay, keyboard submission, and a 375px-wide layout. Docker was not run because no Docker daemon was available.
 
 The container runs as the .NET image's non-root application user. CI tests and publishes the app on pushes and pull requests. Docker is supplied as a convenience; no cloud resources are provisioned.
 
