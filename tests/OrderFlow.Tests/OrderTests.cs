@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Time.Testing;
@@ -216,6 +217,8 @@ public class OrderTests
         Assert.Equal(TimeSpan.FromSeconds(1), RetryPolicy.Delay(1)); Assert.Equal(TimeSpan.FromSeconds(2), RetryPolicy.Delay(2));
     }
 }
+// Fresh session IDs isolate cases. This fixture sends 21 POSTs, below the shared
+// 60/minute limit; assertions use stable IDs/counts, never worker timing or test order.
 public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly HttpClient client;
@@ -226,14 +229,90 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
         var page = await client.GetAsync("/"); Assert.Contains("OrderFlow", await page.Content.ReadAsStringAsync()); Assert.True(page.Headers.Contains("Content-Security-Policy"));
     }
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-uuid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidGetSessionIsRejected(string? session)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/orders");
+        if (session is not null) request.Headers.Add("X-Demo-Session", session);
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("X-Demo-Session", null)]
+    [InlineData("X-Demo-Session", "not-a-uuid")]
+    [InlineData("X-Demo-Session", "00000000-0000-0000-0000-000000000000")]
+    [InlineData("Idempotency-Key", null)]
+    [InlineData("Idempotency-Key", "not-a-uuid")]
+    [InlineData("Idempotency-Key", "00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidPostHeaderDoesNotCreateAnOrder(string header, string? value)
+    {
+        var session = Guid.NewGuid();
+        var key = Guid.NewGuid();
+        using var invalid = Request(session, key, "Success");
+        invalid.Headers.Remove(header);
+        if (value is not null) invalid.Headers.Add(header, value);
+        using var rejected = await client.SendAsync(invalid);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Empty(await ListOrders(session));
+
+        // A corrected request is a new admission, not a replay of rejected work.
+        var id = await SubmitAndReadId(session, key, HttpStatusCode.Accepted, replayed: false);
+        Assert.Equal(id, Assert.Single(await ListOrders(session)).GetProperty("id").GetGuid());
+    }
+
     [Fact]
-    public async Task MissingSessionIsRejected() => Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/orders")).StatusCode);
+    public async Task IdempotencyAndOrderListsAreScopedToEachSession()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var key = Guid.NewGuid();
+        var aId = await SubmitAndReadId(a, key, HttpStatusCode.Accepted, replayed: false);
+        Assert.Empty(await ListOrders(b));
+        var bId = await SubmitAndReadId(b, key, HttpStatusCode.Accepted, replayed: false);
+        Assert.NotEqual(aId, bId);
+        Assert.Equal(aId, Assert.Single(await ListOrders(a)).GetProperty("id").GetGuid());
+        Assert.Equal(bId, Assert.Single(await ListOrders(b)).GetProperty("id").GetGuid());
+
+        Assert.Equal(aId, await SubmitAndReadId(a, key, HttpStatusCode.OK, replayed: true));
+        Assert.Equal(bId, await SubmitAndReadId(b, key, HttpStatusCode.OK, replayed: true));
+        Assert.Equal(aId, Assert.Single(await ListOrders(a)).GetProperty("id").GetGuid());
+        Assert.Equal(bId, Assert.Single(await ListOrders(b)).GetProperty("id").GetGuid());
+    }
+
+    private async Task<Guid> SubmitAndReadId(Guid session, Guid key, HttpStatusCode status, bool replayed)
+    {
+        using var request = Request(session, key, "Success");
+        using var response = await client.SendAsync(request);
+        Assert.Equal(status, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(replayed, body.GetProperty("replayed").GetBoolean());
+        var id = body.GetProperty("order").GetProperty("id").GetGuid();
+        Assert.NotEqual(Guid.Empty, id);
+        return id;
+    }
+
+    private async Task<JsonElement[]> ListOrders(Guid session)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/orders");
+        request.Headers.Add("X-Demo-Session", session.ToString());
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<JsonElement[]>())!;
+    }
     [Theory]
     [InlineData("nonsense")]
     [InlineData("1")]
     public async Task InvalidScenarioIsRejected(string scenario)
     {
-        using var request = Request(Guid.NewGuid(), Guid.NewGuid(), scenario); Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(request)).StatusCode);
+        var session = Guid.NewGuid();
+        using var request = Request(session, Guid.NewGuid(), scenario);
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(await ListOrders(session));
     }
     [Fact]
     public async Task AcceptedReplayAndConflictHaveDistinctHttpSemantics()
