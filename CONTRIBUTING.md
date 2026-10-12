@@ -22,6 +22,6 @@ Discuss database, broker, authentication, or architecture changes in an issue fi
 
 - Extend API boundary coverage (for example malformed JSON or unsupported content types). [Issue #3](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) covers UUID validation and session-scoped replay; keep fresh sessions and stay below the shared submission limit.
 - Extend assistive-technology verification of outcome announcements; record the browser and screen reader used. Check quiet initial history, grouped completions, replay deduplication, and focus retention.
-- Review [ADR 0001](docs/decisions/0001-optional-durable-storage.md) and its small implementation milestones. Agree on a milestone with the maintainer before implementing; the optional PostgreSQL adapter is proposed, not available. Preserve SDK-only startup and add real crash/duplicate-delivery tests before claiming durability.
+- Review [ADR 0001](docs/decisions/0001-optional-durable-storage.md) and its small implementation milestones. Agree on a milestone with the maintainer before implementing; the optional PostgreSQL adapter is proposed, not available. The admission/query and single-attempt boundaries are implemented in memory and covered by `AdapterTests.cs`; persistence and leases are still proposed. Preserve SDK-only startup and add real crash/duplicate-delivery tests before claiming durability.
 
 For bugs, include reproduction steps, expected/actual results, SDK version, and relevant sanitized logs. Do not include session tokens from a shared instance or credentials.

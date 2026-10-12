@@ -57,6 +57,7 @@ flowchart LR
 ```
 
 - **`Program.cs`** — HTTP validation, response semantics, dependency injection, security headers, submission rate limit, and static files.
+- **`Adapters.cs`** — asynchronous admission/query contracts and one cancellable fulfillment attempt; the HTTP API depends on these boundaries.
 - **`Orders.cs`** — immutable response snapshots, locked state transitions, scoped idempotency, bounded channel, retry policy, and hosted consumers.
 - **`wwwroot/`** — responsive HTML/CSS/JavaScript dashboard with native keyboard controls and visible focus styles. No frontend framework.
 - **`tests/OrderFlow.Tests/`** — concurrency, capacity, conflict, isolation, retention, cancellation, retry outcome, snapshot, and HTTP integration checks.
@@ -97,7 +98,15 @@ This does **not** claim exactly-once external effects or production readiness. T
 
 ## Optional durable storage proposal
 
-[ADR 0001](docs/decisions/0001-optional-durable-storage.md) proposes an opt-in PostgreSQL store and work queue, compares a broker/outbox alternative, and defines leases, crash recovery, retention, failure tests, and small implementation milestones. **Proposed only:** no adapter, database dependency, or deployment has been added. The default SDK-only demo stays unchanged.
+[ADR 0001](docs/decisions/0001-optional-durable-storage.md) proposes an opt-in PostgreSQL store and work queue, compares a broker/outbox alternative, and defines leases, crash recovery, retention, failure tests, and small implementation milestones. **Durability remains proposed.** The first code milestone extracts admission/query and single-attempt simulator interfaces, backed by the existing in-memory store. No database dependency or deployment has been added. The default SDK-only demo stays unchanged.
+
+### Adapter boundaries available today
+
+`IOrderAdmission` owns submission as one atomic operation; callers cannot separately save an order and enqueue it. `IOrderQueries` returns session-scoped snapshots. Both interfaces resolve to the same singleton `OrderStore` used by the two background consumers. Their async signatures allow a future I/O-based adapter; memory operations still use the existing lock and bounded Channel. A pre-canceled request is rejected before admission; cancellation after acceptance does not remove accepted work.
+
+`IFulfillmentSimulator` executes one 700ms attempt and returns Completed or TransientFailure. `OrderProcessor` owns the three-attempt budget, state/event updates, and 1s/2s backoff. A durable claim/lease interface is deferred until the persistence milestone; the current worker remains explicitly in-memory.
+
+All 39 original tests remain unchanged. Eleven additional cases cover shared DI composition, replaceable asynchronous HTTP boundaries, concurrent replay and immutable/session-scoped views through the interfaces, cancellation, fake-time single attempts, and injected outcomes. No database, container, environment variable, or new package is needed.
 
 ## Build and optional container
 
@@ -116,7 +125,7 @@ Run the frontend regression suite with Node.js 24 or newer (no npm install or bu
 node --test tests/frontend/*.test.mjs
 ```
 
-Validation: **27 backend tests and 12 frontend tests** pass, and the .NET release publish succeeds. API integration coverage checks missing, malformed, and all-zero UUID headers, rejected-request safety, independent orders for the same key in different sessions, and replay IDs/counts within each session. Cases use fresh sessions and 21 POSTs per fixture, below the shared 60/minute limit; they do not depend on worker timing or test order.
+Validation: **38 backend tests and 12 frontend tests** pass, and the .NET release publish succeeds. API integration coverage checks missing, malformed, and all-zero UUID headers, rejected-request safety, independent orders for the same key in different sessions, and replay IDs/counts within each session. Cases use fresh sessions and 21 POSTs per fixture, below the shared 60/minute limit; they do not depend on worker timing or test order.
 
 Frontend coverage includes quiet hydration, terminal transitions, multiple outcomes, replay/poll deduplication, early submission, and unchanged live-region writes.
 
