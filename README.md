@@ -35,6 +35,14 @@ Open **http://localhost:5088**. No database, API key, frontend build, or externa
 
 The dashboard polls every second, so a short-lived Queued or Processing state may pass between snapshots. Every transition remains in the timeline. Order IDs are shortened in the UI; API responses contain the full UUID.
 
+### Quiet outcome announcements
+
+Completed and failed orders update one persistent, polite, atomic status region outside the timeline. Each full order ID is announced once per page session, with its short ID and outcome. Unchanged polls and **Repeat last request** do not repeat outcomes; connection messages only change when the connection state changes.
+
+The first successful poll silently hydrates terminal history. Orders still in progress announce when they finish; a new order submitted on this page before that first poll is also eligible. Multiple outcomes in one snapshot are grouped into one message listing completed and failed IDs. Reloading starts a new page session and keeps existing terminal history quiet.
+
+For a keyboard walkthrough, select a scenario with the radio arrow keys, Tab to **Queue an order**, and press Enter. Focus stays on the control through polling and completion. Tab to **Repeat last request** and confirm the count and outcome stay unchanged. Try the exhausted-retry scenario for the failure announcement, then reload to check quiet hydration.
+
 ## Architecture
 
 ```mermaid
@@ -98,7 +106,15 @@ docker run --rm -p 5088:8080 orderflow
 
 Processor outcome tests advance `FakeTimeProvider` through 699ms/700ms processing and just-before/at-deadline backoff boundaries. A test-only timer-registration signal synchronizes async continuations; real time is used only as a deadlock guard. Cancellation tests cover both backoff waits and verify that advancing time afterward produces no new attempts or events.
 
-Validation: all **18 tests** pass and the .NET release publish succeeds. The dashboard was manually checked for all three outcomes, request replay, keyboard submission, and a 375px-wide layout. Docker was not run because no Docker daemon was available.
+Run the frontend regression suite with Node.js 24 or newer (no npm install or build step):
+
+```sh
+node --test tests/frontend/*.test.mjs
+```
+
+Validation: **18 backend tests and 12 frontend tests** pass, and the .NET release publish succeeds. Frontend coverage includes quiet hydration, terminal transitions, multiple outcomes, replay/poll deduplication, early submission, and unchanged live-region writes.
+
+Manual checks used the Codex in-app browser on macOS: keyboard submission/replay, focus retained through completion and failure, quiet reload, a 375px viewport, and a temporary local stylesheet doubling font sizes (including 28px action-button text). Controls wrapped without horizontal page overflow. The accessibility tree was inspected; VoiceOver/NVDA speech was **not** tested, and this is not a WCAG certification. Docker was not run because no Docker daemon was available.
 
 The container runs as the .NET image's non-root application user. CI tests and publishes the app on pushes and pull requests. Docker is supplied as a convenience; no cloud resources are provisioned.
 
@@ -109,7 +125,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Start wit
 | Roadmap | Good fit |
 | --- | --- |
 | [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | Completed: controlled time and cancellation during both backoff waits |
-| [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Frontend behavior and accessibility |
+| [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Completed: quiet outcome announcements and frontend regression coverage |
 | [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | First contribution: HTTP integration tests |
 | [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Architecture proposal before implementation |
 
