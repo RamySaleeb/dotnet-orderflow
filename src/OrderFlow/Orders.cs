@@ -11,7 +11,7 @@ public sealed record WorkItem(Guid Session, Guid OrderId);
 
 // Store and queue admission share one lock: an accepted request is always queued exactly once.
 // This is an in-process demo, not a durable message broker or a payment system.
-public sealed class OrderStore(TimeProvider clock, int capacity = 500, int perSession = 20)
+public sealed class OrderStore(TimeProvider clock, int capacity = 500, int perSession = 20) : IOrderAdmission, IOrderQueries
 {
     private sealed class Entry(Guid session, Guid key, Scenario scenario, DateTimeOffset now)
     {
@@ -30,6 +30,18 @@ public sealed class OrderStore(TimeProvider clock, int capacity = 500, int perSe
     private readonly Channel<WorkItem> queue = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(capacity)
     { FullMode = BoundedChannelFullMode.Wait, SingleWriter = false, SingleReader = false });
     public ChannelReader<WorkItem> Reader => queue.Reader;
+
+    public ValueTask<Submission> SubmitAsync(Guid session, Guid key, Scenario scenario, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(Submit(session, key, scenario));
+    }
+
+    public ValueTask<IReadOnlyList<OrderView>> ListAsync(Guid session, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(List(session));
+    }
 
     public Submission Submit(Guid session, Guid key, Scenario scenario)
     {
@@ -92,8 +104,11 @@ public static class RetryPolicy
     public static TimeSpan Delay(int attempt) => TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
 }
 
-public sealed class OrderProcessor(OrderStore store, TimeProvider clock)
+public sealed class OrderProcessor(OrderStore store, TimeProvider clock, IFulfillmentSimulator fulfillment)
 {
+    // Preserve the simple direct-composition entry point used by the original tests.
+    public OrderProcessor(OrderStore store, TimeProvider clock) : this(store, clock, new FulfillmentSimulator(clock)) { }
+
     public async Task ProcessAsync(WorkItem work, CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= RetryPolicy.MaxAttempts; attempt++)
@@ -101,8 +116,8 @@ public sealed class OrderProcessor(OrderStore store, TimeProvider clock)
             cancellationToken.ThrowIfCancellationRequested();
             var order = store.Advance(work, OrderStatus.Processing, attempt, $"Attempt {attempt}: contacting simulated fulfillment");
             if (order is null) return;
-            await Task.Delay(TimeSpan.FromMilliseconds(700), clock, cancellationToken);
-            if (!RetryPolicy.ShouldFail(order.Scenario, attempt))
+            var outcome = await fulfillment.ExecuteAttemptAsync(order, cancellationToken);
+            if (outcome == FulfillmentOutcome.Completed)
             {
                 store.Advance(work, OrderStatus.Completed, attempt, "Fulfillment completed (simulation)");
                 return;
