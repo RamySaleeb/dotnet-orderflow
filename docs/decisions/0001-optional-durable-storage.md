@@ -5,7 +5,7 @@
 - **Tracks:** [Issue #4](https://github.com/RamySaleeb/dotnet-orderflow/issues/4)
 - **Decision proposed:** Add an opt-in PostgreSQL adapter that persists orders and jobs together. Keep the existing in-memory mode as the default.
 
-Nothing in this ADR is implemented or deployed. There are no new packages, migrations, containers, configuration switches, or cloud resources in this change. The current `dotnet run --project src/OrderFlow --urls http://localhost:5088` command still needs only the .NET SDK.
+The first code milestone (admission/query and single-attempt simulator boundaries) is implemented with the existing in-memory store. The durable adapter remains proposed and is not deployed. There are no new packages, migrations, containers, configuration switches, or cloud resources. The current `dotnet run --project src/OrderFlow --urls http://localhost:5088` command still needs only the .NET SDK.
 
 ## Context and scope
 
@@ -89,7 +89,7 @@ Without provider deduplication/reconciliation, expired work with an uncertain ef
 
 ## Narrow adapter boundaries
 
-Names below are proposed contracts, not existing interfaces:
+`IOrderAdmission`, `IOrderQueries`, and `IFulfillmentSimulator` are now implemented in `src/OrderFlow/Adapters.cs`; `IOrderWork` remains proposed for durable execution.
 
 - `IOrderAdmission.SubmitAsync(session, key, scenario, cancellation)` owns atomic identity lookup, quota enforcement, order/event/job creation, and returns Accepted/Replay/Conflict. No separate API-level `Save` then `Enqueue` pair.
 - `IOrderQueries.ListAsync(session, cancellation)` returns the current immutable views with the same session scope.
@@ -112,7 +112,7 @@ Persist only fictional fixtures and necessary state. Treat session UUIDs as capa
 
 ## Required failure-test matrix for implementation
 
-These are future acceptance tests; the existing 27 backend and 12 frontend tests do not prove durability. Use real PostgreSQL transactions and independently killable worker/API processes, deterministic barriers around commit/effect boundaries, and controlled due/lease timestamps. Avoid tests that merely sleep and hope a race occurred.
+These are future acceptance tests; the existing 38 backend and 12 frontend tests do not prove durability. Use real PostgreSQL transactions and independently killable worker/API processes, deterministic barriers around commit/effect boundaries, and controlled due/lease timestamps. Avoid tests that merely sleep and hope a race occurred.
 
 | Failure or boundary | Expected evidence |
 | --- | --- |
@@ -136,9 +136,9 @@ These are future acceptance tests; the existing 27 backend and 12 frontend tests
 ## Follow-up milestones for maintainer review
 
 1. **Review this ADR:** Agree on PostgreSQL, retention, crash-vs-business-attempt accounting, five-recovery quarantine budget, lease timings, and future external-effect policy. Keep status Proposed until accepted.
-2. **Extract and prove memory parity:** Introduce admission/query and single-attempt execution boundaries in a focused PR. Preserve all 39 existing tests, dashboard behavior, and SDK-only startup. No database required yet.
+2. **Extract and prove memory parity — implemented:** Admission/query and single-attempt execution interfaces now wrap the existing memory behavior. All 39 original tests remain unchanged, with 11 additional boundary/composition cases. The worker still uses the bounded Channel and the processor retains retry scheduling; no database or lease abstraction is required.
 3. **Add optional persistence:** Schema/migration runner, configuration validation, transactional admission and reads, local Compose instructions, and separate PostgreSQL integration tests. Cover commit ambiguity, quotas, concurrent keys, and retention before adding workers.
 4. **Add durable execution:** Claim/renew/fence, persisted retry scheduling, crash recovery, quarantine, and graceful shutdown. Pass the failure matrix with process-kill tests before claiming restart durability.
 5. **Document and observe:** Mode-aware dashboard copy, operational metrics, backup/restore exercise, and contributor guide. Re-review the adapter's guarantees. Consider an external broker only in a later ADR supported by measured need.
 
-Completion of issue #4 means this proposal is published for review. It does not approve these milestones for implementation or provision infrastructure.
+Issue #4 completed the design deliverable. The subsequently authorized first code milestone is implemented; persistence and durable execution remain proposed for separate review. No infrastructure has been provisioned.
