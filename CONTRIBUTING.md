@@ -20,7 +20,7 @@ Discuss database, broker, authentication, or architecture changes in an issue fi
 
 ## Good starting points
 
-- Drive processor timing through a fake clock to remove real-time waits from outcome tests.
+- Extend HTTP validation and session-scoped idempotency coverage ([issue #3](https://github.com/RamySaleeb/dotnet-orderflow/issues/3)).
 - Announce terminal order changes to assistive technology without narrating every poll.
 - Propose a durable queue/store adapter with restart and duplicate-delivery tests.
 
