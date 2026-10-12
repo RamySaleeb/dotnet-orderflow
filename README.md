@@ -95,6 +95,10 @@ Repeat the POST unchanged for a replay. Change `Recover` to `Exhaust` with the s
 
 This does **not** claim exactly-once external effects or production readiness. The idempotency guarantee is process-local and applies only while the order is retained. Failed orders are visible; there is no real dead-letter queue, manual replay endpoint, checkout, inventory, or payment processing.
 
+## Optional durable storage proposal
+
+[ADR 0001](docs/decisions/0001-optional-durable-storage.md) proposes an opt-in PostgreSQL store and work queue, compares a broker/outbox alternative, and defines leases, crash recovery, retention, failure tests, and small implementation milestones. **Proposed only:** no adapter, database dependency, or deployment has been added. The default SDK-only demo stays unchanged.
+
 ## Build and optional container
 
 ```sh
@@ -122,14 +126,14 @@ The container runs as the .NET image's non-root application user. CI tests and p
 
 ## Contribute
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Start with a focused task below, and leave a comment on the issue before beginning so contributors can coordinate.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Browse the completed roadmap below and the proposed follow-up milestones, and leave a comment on the issue before beginning so contributors can coordinate.
 
 | Roadmap | Good fit |
 | --- | --- |
 | [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | Completed: controlled time and cancellation during both backoff waits |
 | [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Completed: quiet outcome announcements and frontend regression coverage |
 | [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | Completed: UUID validation, rejected-request safety, and session-scoped replay tests |
-| [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Architecture proposal before implementation |
+| [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Completed: [ADR 0001 proposal](docs/decisions/0001-optional-durable-storage.md); implementation awaits review |
 
 Each issue includes starting files, acceptance criteria, and validation expectations. Keep the zero-configuration local experience intact; durability is a design proposal, not a deployed feature. [Browse all open issues](https://github.com/RamySaleeb/dotnet-orderflow/issues).
 
