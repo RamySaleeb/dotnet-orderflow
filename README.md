@@ -102,7 +102,16 @@ The container runs as the .NET image's non-root application user. CI tests and p
 
 ## Contribute
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Useful next steps include deterministic processor time tests, an optional durable queue adapter, and accessible announcements when order statuses change. Keep the zero-configuration local experience intact and document the guarantees of every new adapter.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations. Start with a focused task below, and leave a comment on the issue before beginning so contributors can coordinate.
+
+| Roadmap | Good fit |
+| --- | --- |
+| [#1 — Deterministic retry tests with FakeTimeProvider](https://github.com/RamySaleeb/dotnet-orderflow/issues/1) | First contribution: C# tests and controlled time |
+| [#2 — Accessible order-outcome announcements](https://github.com/RamySaleeb/dotnet-orderflow/issues/2) | Frontend behavior and accessibility |
+| [#3 — API validation and session-scoped idempotency tests](https://github.com/RamySaleeb/dotnet-orderflow/issues/3) | First contribution: HTTP integration tests |
+| [#4 — Optional durable queue/store design](https://github.com/RamySaleeb/dotnet-orderflow/issues/4) | Architecture proposal before implementation |
+
+Each issue includes starting files, acceptance criteria, and validation expectations. Keep the zero-configuration local experience intact; durability is a design proposal, not a deployed feature. [Browse all open issues](https://github.com/RamySaleeb/dotnet-orderflow/issues).
 
 ## License
 
